@@ -1,1 +1,200 @@
-x
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Image to Clip</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0e0e11;
+      --panel: #17171c;
+      --border: #2a2a32;
+      --text: #f2f2f4;
+      --muted: #9a9aa5;
+      --accent: #4f8cff;
+      --accent-hover: #6a9dff;
+      --ok: #37c977;
+      --err: #ff5c5c;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 16px;
+      padding-bottom: 60px;
+    }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    p.sub { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      background: #1f1f26;
+      border: 1px dashed var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 13px;
+      margin-bottom: 14px;
+    }
+    select {
+      width: 100%;
+      padding: 10px;
+      background: #1f1f26;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-size: 14px;
+      margin-bottom: 14px;
+    }
+    button.primary {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: var(--accent);
+      color: white;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button.primary:disabled {
+      background: #3a3a44;
+      color: var(--muted);
+      cursor: not-allowed;
+    }
+    button.primary:not(:disabled):active { background: var(--accent-hover); }
+    #status {
+      margin-top: 14px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+    #status.err { color: var(--err); }
+    #status.ok { color: var(--ok); }
+    #resultCard {
+      margin-top: 16px;
+      display: none;
+      background: #1f1f26;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    #resultCard video {
+      width: 100%;
+      border-radius: 8px;
+      background: black;
+      margin-bottom: 10px;
+    }
+    #resultCard a {
+      display: block;
+      text-align: center;
+      background: var(--accent);
+      color: white;
+      text-decoration: none;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid var(--muted);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <h1>Image to Clip</h1>
+  <p class="sub">Upload a photo, get a 6-second captioned zoom clip.</p>
+
+  <div class="panel">
+    <label for="imageInput">Photo</label>
+    <input type="file" id="imageInput" accept="image/*" capture="environment" />
+
+    <label for="zoomStyle">Motion style</label>
+    <select id="zoomStyle">
+      <option value="zoom_in_center">Zoom in (center)</option>
+      <option value="zoom_out_center">Zoom out (center)</option>
+    </select>
+
+    <button class="primary" id="goBtn" disabled>Select a photo first</button>
+    <div id="status"></div>
+  </div>
+
+  <div id="resultCard">
+    <video id="resultVideo" controls playsinline muted></video>
+    <a id="downloadLink" download="clip.mp4">Download</a>
+  </div>
+
+  <script>
+    const imageInput = document.getElementById('imageInput');
+    const zoomStyle = document.getElementById('zoomStyle');
+    const goBtn = document.getElementById('goBtn');
+    const statusEl = document.getElementById('status');
+    const resultCard = document.getElementById('resultCard');
+    const resultVideo = document.getElementById('resultVideo');
+    const downloadLink = document.getElementById('downloadLink');
+
+    imageInput.addEventListener('change', () => {
+      const has = imageInput.files.length > 0;
+      goBtn.disabled = !has;
+      goBtn.textContent = has ? 'Create clip' : 'Select a photo first';
+    });
+
+    goBtn.addEventListener('click', async () => {
+      const file = imageInput.files[0];
+      if (!file) return;
+
+      goBtn.disabled = true;
+      const startedAt = performance.now();
+      statusEl.className = '';
+      statusEl.innerHTML = '<span class="spinner"></span>Uploading & rendering...';
+      resultCard.style.display = 'none';
+
+      try {
+        const formData = new FormData();
+        formData.append('image', file);
+        formData.append('zoom_style', zoomStyle.value);
+
+        const resp = await fetch('/generate', { method: 'POST', body: formData });
+        if (!resp.ok) {
+          const text = await resp.text();
+          throw new Error(text || `Server error (${resp.status})`);
+        }
+        const blob = await resp.blob();
+        const url = URL.createObjectURL(blob);
+        const seconds = ((performance.now() - startedAt) / 1000).toFixed(1);
+
+        resultVideo.src = url;
+        downloadLink.href = url;
+        downloadLink.download = `${zoomStyle.value}.mp4`;
+        resultCard.style.display = 'block';
+
+        statusEl.className = 'ok';
+        statusEl.textContent = `Done in ${seconds}s`;
+      } catch (err) {
+        statusEl.className = 'err';
+        statusEl.textContent = 'Error: ' + err.message;
+      } finally {
+        goBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
